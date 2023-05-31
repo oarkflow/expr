@@ -2,6 +2,8 @@ package optimizer
 
 import (
 	"reflect"
+
+	. "github.com/oarkflow/expr/ast"
 )
 
 type inArray struct{}
@@ -19,7 +21,7 @@ func (*inArray) Visit(node *Node) {
 						// be same as checked value type.
 						goto string
 					}
-					
+
 					for _, a := range array.Nodes {
 						if _, ok := a.(*IntegerNode); !ok {
 							goto string
@@ -36,7 +38,7 @@ func (*inArray) Visit(node *Node) {
 							Right:    &ConstantNode{Value: value},
 						})
 					}
-				
+
 				string:
 					for _, a := range array.Nodes {
 						if _, ok := a.(*StringNode); !ok {
@@ -54,7 +56,7 @@ func (*inArray) Visit(node *Node) {
 							Right:    &ConstantNode{Value: value},
 						})
 					}
-					
+
 				}
 			}
 		}

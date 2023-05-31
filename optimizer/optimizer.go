@@ -1,6 +1,7 @@
 package optimizer
 
 import (
+	. "github.com/oarkflow/expr/ast"
 	"github.com/oarkflow/expr/conf"
 )
 

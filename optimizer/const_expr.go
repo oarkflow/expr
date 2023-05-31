@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	
+
+	. "github.com/oarkflow/expr/ast"
 	"github.com/oarkflow/expr/file"
 )
 
@@ -28,12 +29,12 @@ func (c *constExpr) Visit(node *Node) {
 			}
 		}
 	}()
-	
+
 	patch := func(newNode Node) {
 		c.applied = true
 		Patch(node, newNode)
 	}
-	
+
 	if call, ok := (*node).(*CallNode); ok {
 		if name, ok := call.Callee.(*IdentifierNode); ok {
 			fn, ok := c.fns[name.Value]
@@ -42,7 +43,7 @@ func (c *constExpr) Visit(node *Node) {
 				for i := 0; i < len(call.Arguments); i++ {
 					arg := call.Arguments[i]
 					var param interface{}
-					
+
 					switch a := arg.(type) {
 					case *NilNode:
 						param = nil
@@ -56,11 +57,11 @@ func (c *constExpr) Visit(node *Node) {
 						param = a.Value
 					case *ConstantNode:
 						param = a.Value
-					
+
 					default:
 						return // Const expr optimization not applicable.
 					}
-					
+
 					if param == nil && reflect.TypeOf(param) == nil {
 						// In case of nil value and nil type use this hack,
 						// otherwise reflect.Call will panic on zero value.
@@ -69,7 +70,7 @@ func (c *constExpr) Visit(node *Node) {
 						in[i] = reflect.ValueOf(param)
 					}
 				}
-				
+
 				out := fn.Call(in)
 				value := out[0].Interface()
 				if len(out) == 2 && out[1].Type() == errorType && !out[1].IsNil() {

@@ -1,5 +1,9 @@
 package optimizer
 
+import (
+	. "github.com/oarkflow/expr/ast"
+)
+
 type constRange struct{}
 
 func (*constRange) Visit(node *Node) {

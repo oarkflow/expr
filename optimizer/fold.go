@@ -3,7 +3,8 @@ package optimizer
 import (
 	"math"
 	"reflect"
-	
+
+	. "github.com/oarkflow/expr/ast"
 	"github.com/oarkflow/expr/file"
 )
 
@@ -23,7 +24,7 @@ func (fold *fold) Visit(node *Node) {
 		patch(newNode)
 		newNode.SetType(leafType)
 	}
-	
+
 	switch n := (*node).(type) {
 	case *UnaryNode:
 		switch n.Operator {
@@ -46,7 +47,7 @@ func (fold *fold) Visit(node *Node) {
 				patch(&BoolNode{Value: !a.Value})
 			}
 		}
-	
+
 	case *BinaryNode:
 		switch n.Operator {
 		case "+":
@@ -217,7 +218,7 @@ func (fold *fold) Visit(node *Node) {
 		case "and", "&&":
 			a := toBool(n.Left)
 			b := toBool(n.Right)
-			
+
 			if a != nil && a.Value { // true and x
 				patch(n.Right)
 			} else if b != nil && b.Value { // x and true
@@ -228,7 +229,7 @@ func (fold *fold) Visit(node *Node) {
 		case "or", "||":
 			a := toBool(n.Left)
 			b := toBool(n.Right)
-			
+
 			if a != nil && !a.Value { // false or x
 				patch(n.Right)
 			} else if b != nil && !b.Value { // x or false
@@ -259,7 +260,7 @@ func (fold *fold) Visit(node *Node) {
 				}
 			}
 		}
-	
+
 	case *ArrayNode:
 		if len(n.Nodes) > 0 {
 			for _, a := range n.Nodes {
@@ -285,7 +286,7 @@ func (fold *fold) Visit(node *Node) {
 			}
 			patch(&ConstantNode{Value: value})
 		}
-	
+
 	case *BuiltinNode:
 		switch n.Name {
 		case "filter":

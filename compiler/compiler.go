@@ -3,11 +3,12 @@ package compiler
 import (
 	"fmt"
 	"reflect"
-	
+
 	"github.com/oarkflow/expr/ast"
 	"github.com/oarkflow/expr/conf"
 	"github.com/oarkflow/expr/file"
 	"github.com/oarkflow/expr/parser"
+	. "github.com/oarkflow/expr/vm"
 	"github.com/oarkflow/expr/vm/runtime"
 )
 
@@ -21,20 +22,20 @@ func Compile(tree *parser.Tree, config *conf.Config) (program *Program, err erro
 			err = fmt.Errorf("%v", r)
 		}
 	}()
-	
+
 	c := &compiler{
 		locations:      make([]file.Location, 0),
 		constantsIndex: make(map[interface{}]int),
 		functionsIndex: make(map[string]int),
 	}
-	
+
 	if config != nil {
 		c.mapEnv = config.MapEnv
 		c.cast = config.Expect
 	}
-	
+
 	c.compile(tree.Node)
-	
+
 	switch c.cast {
 	case reflect.Int:
 		c.emit(OpCast, 0)
@@ -43,7 +44,7 @@ func Compile(tree *parser.Tree, config *conf.Config) (program *Program, err erro
 	case reflect.Float64:
 		c.emit(OpCast, 2)
 	}
-	
+
 	program = &Program{
 		Node:      tree.Node,
 		Source:    tree.Source,
@@ -152,7 +153,7 @@ func (c *compiler) compile(node ast.Node) {
 	defer func() {
 		c.nodes = c.nodes[:len(c.nodes)-1]
 	}()
-	
+
 	switch n := node.(type) {
 	case *ast.NilNode:
 		c.NilNode(n)
@@ -284,18 +285,18 @@ func (c *compiler) ConstantNode(node *ast.ConstantNode) {
 
 func (c *compiler) UnaryNode(node *ast.UnaryNode) {
 	c.compile(node.Node)
-	
+
 	switch node.Operator {
-	
+
 	case "!", "not":
 		c.emit(OpNot)
-	
+
 	case "+":
 		// Do nothing
-	
+
 	case "-":
 		c.emit(OpNegate)
-	
+
 	default:
 		panic(fmt.Sprintf("unknown operator (%v)", node.Operator))
 	}
@@ -304,12 +305,12 @@ func (c *compiler) UnaryNode(node *ast.UnaryNode) {
 func (c *compiler) BinaryNode(node *ast.BinaryNode) {
 	l := kind(node.Left)
 	r := kind(node.Right)
-	
+
 	switch node.Operator {
 	case "==":
 		c.compile(node.Left)
 		c.compile(node.Right)
-		
+
 		if l == r && l == reflect.Int {
 			c.emit(OpEqualInt)
 		} else if l == r && l == reflect.String {
@@ -317,82 +318,82 @@ func (c *compiler) BinaryNode(node *ast.BinaryNode) {
 		} else {
 			c.emit(OpEqual)
 		}
-	
+
 	case "!=":
 		c.compile(node.Left)
 		c.compile(node.Right)
 		c.emit(OpEqual)
 		c.emit(OpNot)
-	
+
 	case "or", "||":
 		c.compile(node.Left)
 		end := c.emit(OpJumpIfTrue, placeholder)
 		c.emit(OpPop)
 		c.compile(node.Right)
 		c.patchJump(end)
-	
+
 	case "and", "&&":
 		c.compile(node.Left)
 		end := c.emit(OpJumpIfFalse, placeholder)
 		c.emit(OpPop)
 		c.compile(node.Right)
 		c.patchJump(end)
-	
+
 	case "<":
 		c.compile(node.Left)
 		c.compile(node.Right)
 		c.emit(OpLess)
-	
+
 	case ">":
 		c.compile(node.Left)
 		c.compile(node.Right)
 		c.emit(OpMore)
-	
+
 	case "<=":
 		c.compile(node.Left)
 		c.compile(node.Right)
 		c.emit(OpLessOrEqual)
-	
+
 	case ">=":
 		c.compile(node.Left)
 		c.compile(node.Right)
 		c.emit(OpMoreOrEqual)
-	
+
 	case "+":
 		c.compile(node.Left)
 		c.compile(node.Right)
 		c.emit(OpAdd)
-	
+
 	case "-":
 		c.compile(node.Left)
 		c.compile(node.Right)
 		c.emit(OpSubtract)
-	
+
 	case "*":
 		c.compile(node.Left)
 		c.compile(node.Right)
 		c.emit(OpMultiply)
-	
+
 	case "/":
 		c.compile(node.Left)
 		c.compile(node.Right)
 		c.emit(OpDivide)
-	
+
 	case "%":
 		c.compile(node.Left)
 		c.compile(node.Right)
 		c.emit(OpModulo)
-	
+
 	case "**", "^":
 		c.compile(node.Left)
 		c.compile(node.Right)
 		c.emit(OpExponent)
-	
+
 	case "in":
 		c.compile(node.Left)
 		c.compile(node.Right)
 		c.emit(OpIn)
-	
+
 	case "matches":
 		if node.Regexp != nil {
 			c.compile(node.Left)
@@ -402,37 +403,37 @@ func (c *compiler) BinaryNode(node *ast.BinaryNode) {
 			c.compile(node.Right)
 			c.emit(OpMatches)
 		}
-	
+
 	case "contains":
 		c.compile(node.Left)
 		c.compile(node.Right)
 		c.emit(OpContains)
-	
+
 	case "startsWith":
 		c.compile(node.Left)
 		c.compile(node.Right)
 		c.emit(OpStartsWith)
-	
+
 	case "endsWith":
 		c.compile(node.Left)
 		c.compile(node.Right)
 		c.emit(OpEndsWith)
-	
+
 	case "..":
 		c.compile(node.Left)
 		c.compile(node.Right)
 		c.emit(OpRange)
-	
+
 	case "??":
 		c.compile(node.Left)
 		end := c.emit(OpJumpIfNotNil, placeholder)
 		c.emit(OpPop)
 		c.compile(node.Right)
 		c.patchJump(end)
-	
+
 	default:
 		panic(fmt.Sprintf("unknown operator (%v)", node.Operator))
-		
+
 	}
 }
 
@@ -489,13 +490,13 @@ func (c *compiler) MemberNode(node *ast.MemberNode) {
 			}
 		}
 	}
-	
+
 	c.compile(base)
 	if node.Optional {
 		ph := c.emit(OpJumpIfNil, placeholder)
 		c.chains[len(c.chains)-1] = append(c.chains[len(c.chains)-1], ph)
 	}
-	
+
 	if op == OpFetch {
 		c.compile(node.Property)
 		c.emit(OpFetch)
@@ -577,7 +578,7 @@ func (c *compiler) BuiltinNode(node *ast.BuiltinNode) {
 		c.emit(OpTrue)
 		c.patchJump(loopBreak)
 		c.emit(OpEnd)
-	
+
 	case "none":
 		c.compile(node.Arguments[0])
 		c.emit(OpBegin)
@@ -591,7 +592,7 @@ func (c *compiler) BuiltinNode(node *ast.BuiltinNode) {
 		c.emit(OpTrue)
 		c.patchJump(loopBreak)
 		c.emit(OpEnd)
-	
+
 	case "any":
 		c.compile(node.Arguments[0])
 		c.emit(OpBegin)
@@ -604,7 +605,7 @@ func (c *compiler) BuiltinNode(node *ast.BuiltinNode) {
 		c.emit(OpFalse)
 		c.patchJump(loopBreak)
 		c.emit(OpEnd)
-	
+
 	case "one":
 		c.compile(node.Arguments[0])
 		c.emit(OpBegin)
@@ -618,7 +619,7 @@ func (c *compiler) BuiltinNode(node *ast.BuiltinNode) {
 		c.emitPush(1)
 		c.emit(OpEqual)
 		c.emit(OpEnd)
-	
+
 	case "filter":
 		c.compile(node.Arguments[0])
 		c.emit(OpBegin)
@@ -632,7 +633,7 @@ func (c *compiler) BuiltinNode(node *ast.BuiltinNode) {
 		c.emit(OpGetCount)
 		c.emit(OpEnd)
 		c.emit(OpArray)
-	
+
 	case "map":
 		c.compile(node.Arguments[0])
 		c.emit(OpBegin)
@@ -642,7 +643,7 @@ func (c *compiler) BuiltinNode(node *ast.BuiltinNode) {
 		c.emit(OpGetLen)
 		c.emit(OpEnd)
 		c.emit(OpArray)
-	
+
 	case "count":
 		c.compile(node.Arguments[0])
 		c.emit(OpBegin)
@@ -654,7 +655,7 @@ func (c *compiler) BuiltinNode(node *ast.BuiltinNode) {
 		})
 		c.emit(OpGetCount)
 		c.emit(OpEnd)
-	
+
 	default:
 		panic(fmt.Sprintf("unknown builtin %v", node.Name))
 	}
@@ -663,9 +664,9 @@ func (c *compiler) BuiltinNode(node *ast.BuiltinNode) {
 func (c *compiler) emitCond(body func()) {
 	noop := c.emit(OpJumpIfFalse, placeholder)
 	c.emit(OpPop)
-	
+
 	body()
-	
+
 	jmp := c.emit(OpJump, placeholder)
 	c.patchJump(noop)
 	c.emit(OpPop)
@@ -675,9 +676,9 @@ func (c *compiler) emitCond(body func()) {
 func (c *compiler) emitLoop(body func()) {
 	begin := len(c.bytecode)
 	end := c.emit(OpJumpIfEnd, placeholder)
-	
+
 	body()
-	
+
 	c.emit(OpIncrementIt)
 	c.emit(OpJumpBackward, c.calcBackwardJump(begin))
 	c.patchJump(end)
@@ -694,15 +695,15 @@ func (c *compiler) PointerNode(node *ast.PointerNode) {
 func (c *compiler) ConditionalNode(node *ast.ConditionalNode) {
 	c.compile(node.Cond)
 	otherwise := c.emit(OpJumpIfFalse, placeholder)
-	
+
 	c.emit(OpPop)
 	c.compile(node.Exp1)
 	end := c.emit(OpJump, placeholder)
-	
+
 	c.patchJump(otherwise)
 	c.emit(OpPop)
 	c.compile(node.Exp2)
-	
+
 	c.patchJump(end)
 }
 
@@ -710,7 +711,7 @@ func (c *compiler) ArrayNode(node *ast.ArrayNode) {
 	for _, node := range node.Nodes {
 		c.compile(node)
 	}
-	
+
 	c.emitPush(len(node.Nodes))
 	c.emit(OpArray)
 }
@@ -719,7 +720,7 @@ func (c *compiler) MapNode(node *ast.MapNode) {
 	for _, pair := range node.Pairs {
 		c.compile(pair)
 	}
-	
+
 	c.emitPush(len(node.Pairs))
 	c.emit(OpMap)
 }

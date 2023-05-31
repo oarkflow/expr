@@ -1,5 +1,9 @@
 package optimizer
 
+import (
+	. "github.com/oarkflow/expr/ast"
+)
+
 type inRange struct{}
 
 func (*inRange) Visit(node *Node) {
