@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
-	
+
 	"github.com/oarkflow/expr/ast"
-	"github.com/oarkflow/expr/builtin"
 	"github.com/oarkflow/expr/checker"
 	"github.com/oarkflow/expr/compiler"
 	"github.com/oarkflow/expr/conf"
@@ -52,7 +51,7 @@ type Option func(c *conf.Config)
 // as well as all fields of embedded structs and struct itself.
 // If map is passed, all items will be treated as variables.
 // Methods defined on this type will be available as functions.
-func Env(env interface{}) Option {
+func Env(env any) Option {
 	return func(c *conf.Config) {
 		c.WithEnv(env)
 	}
@@ -78,6 +77,13 @@ func Operator(operator string, fn ...string) Option {
 func ConstExpr(fn string) Option {
 	return func(c *conf.Config) {
 		c.ConstExpr(fn)
+	}
+}
+
+// AsAny tells the compiler to expect any result.
+func AsAny() Option {
+	return func(c *conf.Config) {
+		c.ExpectAny = true
 	}
 }
 
@@ -131,7 +137,7 @@ func Patch(visitor ast.Visitor) Option {
 }
 
 // Function adds function to list of functions what will be available in expressions.
-func Function(name string, fn func(params ...interface{}) (interface{}, error), types ...interface{}) Option {
+func Function(name string, fn func(params ...any) (any, error), types ...any) Option {
 	return func(c *conf.Config) {
 		ts := make([]reflect.Type, len(types))
 		for i, t := range types {
@@ -144,7 +150,7 @@ func Function(name string, fn func(params ...interface{}) (interface{}, error), 
 			}
 			ts[i] = t
 		}
-		c.Functions[name] = &builtin.Function{
+		c.Functions[name] = &ast.Function{
 			Name:  name,
 			Func:  fn,
 			Types: ts,
@@ -152,27 +158,52 @@ func Function(name string, fn func(params ...interface{}) (interface{}, error), 
 	}
 }
 
+// DisableAllBuiltins disables all builtins.
+func DisableAllBuiltins() Option {
+	return func(c *conf.Config) {
+		for name := range c.Builtins {
+			c.Disabled[name] = true
+		}
+	}
+}
+
+// DisableBuiltin disables builtin function.
+func DisableBuiltin(name string) Option {
+	return func(c *conf.Config) {
+		c.Disabled[name] = true
+	}
+}
+
+// EnableBuiltin enables builtin function.
+func EnableBuiltin(name string) Option {
+	return func(c *conf.Config) {
+		delete(c.Disabled, name)
+	}
+}
+
 // Compile parses and compiles given input expression to bytecode program.
 func Compile(input string, ops ...Option) (*vm.Program, error) {
 	config := conf.CreateNew()
-	
 	for _, op := range ops {
 		op(config)
 	}
+	for name := range config.Disabled {
+		delete(config.Builtins, name)
+	}
 	config.Check()
-	
+
 	if len(config.Operators) > 0 {
 		config.Visitors = append(config.Visitors, &conf.OperatorPatcher{
 			Operators: config.Operators,
 			Types:     config.Types,
 		})
 	}
-	
-	tree, err := parser.Parse(input)
+
+	tree, err := parser.ParseWithConfig(input, config)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if len(config.Visitors) > 0 {
 		for _, v := range config.Visitors {
 			// We need to perform types check, because some visitors may rely on
@@ -185,7 +216,7 @@ func Compile(input string, ops ...Option) (*vm.Program, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if config.Optimize {
 		err = optimizer.Optimize(&tree.Node, config)
 		if err != nil {
@@ -195,22 +226,22 @@ func Compile(input string, ops ...Option) (*vm.Program, error) {
 			return nil, err
 		}
 	}
-	
+
 	program, err := compiler.Compile(tree, config)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return program, nil
 }
 
 // Run evaluates given bytecode program.
-func Run(program *vm.Program, env interface{}) (interface{}, error) {
+func Run(program *vm.Program, env any) (any, error) {
 	return vm.Run(program, env)
 }
 
 // Eval parses, compiles and runs given input.
-func Eval(input string, env interface{}) (interface{}, error) {
+func Eval(input string, env any) (any, error) {
 	if _, ok := env.(Option); ok {
 		return nil, fmt.Errorf("misused expr.Eval: second argument (env) should be passed without expr.Env")
 	}
@@ -222,6 +253,11 @@ func Eval(input string, env interface{}) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	
-	return Run(program, env)
+
+	output, err := Run(program, env)
+	if err != nil {
+		return nil, err
+	}
+
+	return output, nil
 }
