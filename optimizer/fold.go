@@ -1,11 +1,18 @@
 package optimizer
 
 import (
+	"fmt"
 	"math"
 	"reflect"
 
-	. "github.com/oarkflow/expr/ast"
+	"github.com/oarkflow/expr/ast"
 	"github.com/oarkflow/expr/file"
+)
+
+var (
+	integerType = reflect.TypeOf(0)
+	floatType   = reflect.TypeOf(float64(0))
+	stringType  = reflect.TypeOf("")
 )
 
 type fold struct {
@@ -13,77 +20,84 @@ type fold struct {
 	err     *file.Error
 }
 
-func (fold *fold) Visit(node *Node) {
-	patch := func(newNode Node) {
+func (fold *fold) Visit(node *ast.Node) {
+	patch := func(newNode ast.Node) {
 		fold.applied = true
-		Patch(node, newNode)
+		ast.Patch(node, newNode)
 	}
-	// for IntegerNode the type may have been changed from int->float
-	// preserve this information by setting the type after the Patch
-	patchWithType := func(newNode Node, leafType reflect.Type) {
+	patchWithType := func(newNode ast.Node) {
 		patch(newNode)
-		newNode.SetType(leafType)
+		switch newNode.(type) {
+		case *ast.IntegerNode:
+			newNode.SetType(integerType)
+		case *ast.FloatNode:
+			newNode.SetType(floatType)
+		case *ast.StringNode:
+			newNode.SetType(stringType)
+		default:
+			panic(fmt.Sprintf("unknown type %T", newNode))
+		}
 	}
 
 	switch n := (*node).(type) {
-	case *UnaryNode:
+	case *ast.UnaryNode:
 		switch n.Operator {
 		case "-":
-			if i, ok := n.Node.(*IntegerNode); ok {
-				patchWithType(&IntegerNode{Value: -i.Value}, n.Node.Type())
+			if i, ok := n.Node.(*ast.IntegerNode); ok {
+				patchWithType(&ast.IntegerNode{Value: -i.Value})
 			}
-			if i, ok := n.Node.(*FloatNode); ok {
-				patchWithType(&FloatNode{Value: -i.Value}, n.Node.Type())
+			if i, ok := n.Node.(*ast.FloatNode); ok {
+				patchWithType(&ast.FloatNode{Value: -i.Value})
 			}
 		case "+":
-			if i, ok := n.Node.(*IntegerNode); ok {
-				patchWithType(&IntegerNode{Value: i.Value}, n.Node.Type())
+			if i, ok := n.Node.(*ast.IntegerNode); ok {
+				patchWithType(&ast.IntegerNode{Value: i.Value})
 			}
-			if i, ok := n.Node.(*FloatNode); ok {
-				patchWithType(&FloatNode{Value: i.Value}, n.Node.Type())
+			if i, ok := n.Node.(*ast.FloatNode); ok {
+				patchWithType(&ast.FloatNode{Value: i.Value})
 			}
 		case "!", "not":
 			if a := toBool(n.Node); a != nil {
-				patch(&BoolNode{Value: !a.Value})
+				patch(&ast.BoolNode{Value: !a.Value})
 			}
 		}
 
-	case *BinaryNode:
+	case *ast.BinaryNode:
 		switch n.Operator {
 		case "+":
 			{
 				a := toInteger(n.Left)
 				b := toInteger(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&IntegerNode{Value: a.Value + b.Value}, a.Type())
+					patchWithType(&ast.IntegerNode{Value: a.Value + b.Value})
 				}
 			}
 			{
 				a := toInteger(n.Left)
 				b := toFloat(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&FloatNode{Value: float64(a.Value) + b.Value}, a.Type())
+					patchWithType(&ast.FloatNode{Value: float64(a.Value) + b.Value})
 				}
 			}
 			{
 				a := toFloat(n.Left)
 				b := toInteger(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&FloatNode{Value: a.Value + float64(b.Value)}, a.Type())
+					patchWithType(&ast.FloatNode{Value: a.Value + float64(b.Value)})
 				}
 			}
 			{
 				a := toFloat(n.Left)
 				b := toFloat(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&FloatNode{Value: a.Value + b.Value}, a.Type())
+					patchWithType(&ast.FloatNode{Value: a.Value + b.Value})
 				}
 			}
 			{
 				a := toString(n.Left)
 				b := toString(n.Right)
 				if a != nil && b != nil {
-					patch(&StringNode{Value: a.Value + b.Value})
+					patch(&ast.StringNode{Value: a.Value + b.Value})
 				}
 			}
 		case "-":
@@ -91,28 +105,28 @@ func (fold *fold) Visit(node *Node) {
 				a := toInteger(n.Left)
 				b := toInteger(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&IntegerNode{Value: a.Value - b.Value}, a.Type())
+					patchWithType(&ast.IntegerNode{Value: a.Value - b.Value})
 				}
 			}
 			{
 				a := toInteger(n.Left)
 				b := toFloat(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&FloatNode{Value: float64(a.Value) - b.Value}, a.Type())
+					patchWithType(&ast.FloatNode{Value: float64(a.Value) - b.Value})
 				}
 			}
 			{
 				a := toFloat(n.Left)
 				b := toInteger(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&FloatNode{Value: a.Value - float64(b.Value)}, a.Type())
+					patchWithType(&ast.FloatNode{Value: a.Value - float64(b.Value)})
 				}
 			}
 			{
 				a := toFloat(n.Left)
 				b := toFloat(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&FloatNode{Value: a.Value - b.Value}, a.Type())
+					patchWithType(&ast.FloatNode{Value: a.Value - b.Value})
 				}
 			}
 		case "*":
@@ -120,28 +134,28 @@ func (fold *fold) Visit(node *Node) {
 				a := toInteger(n.Left)
 				b := toInteger(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&IntegerNode{Value: a.Value * b.Value}, a.Type())
+					patchWithType(&ast.IntegerNode{Value: a.Value * b.Value})
 				}
 			}
 			{
 				a := toInteger(n.Left)
 				b := toFloat(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&FloatNode{Value: float64(a.Value) * b.Value}, a.Type())
+					patchWithType(&ast.FloatNode{Value: float64(a.Value) * b.Value})
 				}
 			}
 			{
 				a := toFloat(n.Left)
 				b := toInteger(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&FloatNode{Value: a.Value * float64(b.Value)}, a.Type())
+					patchWithType(&ast.FloatNode{Value: a.Value * float64(b.Value)})
 				}
 			}
 			{
 				a := toFloat(n.Left)
 				b := toFloat(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&FloatNode{Value: a.Value * b.Value}, a.Type())
+					patchWithType(&ast.FloatNode{Value: a.Value * b.Value})
 				}
 			}
 		case "/":
@@ -149,33 +163,33 @@ func (fold *fold) Visit(node *Node) {
 				a := toInteger(n.Left)
 				b := toInteger(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&FloatNode{Value: float64(a.Value) / float64(b.Value)}, a.Type())
+					patchWithType(&ast.FloatNode{Value: float64(a.Value) / float64(b.Value)})
 				}
 			}
 			{
 				a := toInteger(n.Left)
 				b := toFloat(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&FloatNode{Value: float64(a.Value) / b.Value}, a.Type())
+					patchWithType(&ast.FloatNode{Value: float64(a.Value) / b.Value})
 				}
 			}
 			{
 				a := toFloat(n.Left)
 				b := toInteger(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&FloatNode{Value: a.Value / float64(b.Value)}, a.Type())
+					patchWithType(&ast.FloatNode{Value: a.Value / float64(b.Value)})
 				}
 			}
 			{
 				a := toFloat(n.Left)
 				b := toFloat(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&FloatNode{Value: a.Value / b.Value}, a.Type())
+					patchWithType(&ast.FloatNode{Value: a.Value / b.Value})
 				}
 			}
 		case "%":
-			if a, ok := n.Left.(*IntegerNode); ok {
-				if b, ok := n.Right.(*IntegerNode); ok {
+			if a, ok := n.Left.(*ast.IntegerNode); ok {
+				if b, ok := n.Right.(*ast.IntegerNode); ok {
 					if b.Value == 0 {
 						fold.err = &file.Error{
 							Location: (*node).Location(),
@@ -183,7 +197,7 @@ func (fold *fold) Visit(node *Node) {
 						}
 						return
 					}
-					patch(&IntegerNode{Value: a.Value % b.Value})
+					patch(&ast.IntegerNode{Value: a.Value % b.Value})
 				}
 			}
 		case "**", "^":
@@ -191,28 +205,28 @@ func (fold *fold) Visit(node *Node) {
 				a := toInteger(n.Left)
 				b := toInteger(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&FloatNode{Value: math.Pow(float64(a.Value), float64(b.Value))}, a.Type())
+					patchWithType(&ast.FloatNode{Value: math.Pow(float64(a.Value), float64(b.Value))})
 				}
 			}
 			{
 				a := toInteger(n.Left)
 				b := toFloat(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&FloatNode{Value: math.Pow(float64(a.Value), b.Value)}, a.Type())
+					patchWithType(&ast.FloatNode{Value: math.Pow(float64(a.Value), b.Value)})
 				}
 			}
 			{
 				a := toFloat(n.Left)
 				b := toInteger(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&FloatNode{Value: math.Pow(a.Value, float64(b.Value))}, a.Type())
+					patchWithType(&ast.FloatNode{Value: math.Pow(a.Value, float64(b.Value))})
 				}
 			}
 			{
 				a := toFloat(n.Left)
 				b := toFloat(n.Right)
 				if a != nil && b != nil {
-					patchWithType(&FloatNode{Value: math.Pow(a.Value, b.Value)}, a.Type())
+					patchWithType(&ast.FloatNode{Value: math.Pow(a.Value, b.Value)})
 				}
 			}
 		case "and", "&&":
@@ -224,7 +238,7 @@ func (fold *fold) Visit(node *Node) {
 			} else if b != nil && b.Value { // x and true
 				patch(n.Left)
 			} else if (a != nil && !a.Value) || (b != nil && !b.Value) { // "x and false" or "false and x"
-				patch(&BoolNode{Value: false})
+				patch(&ast.BoolNode{Value: false})
 			}
 		case "or", "||":
 			a := toBool(n.Left)
@@ -235,70 +249,70 @@ func (fold *fold) Visit(node *Node) {
 			} else if b != nil && !b.Value { // x or false
 				patch(n.Left)
 			} else if (a != nil && a.Value) || (b != nil && b.Value) { // "x or true" or "true or x"
-				patch(&BoolNode{Value: true})
+				patch(&ast.BoolNode{Value: true})
 			}
 		case "==":
 			{
 				a := toInteger(n.Left)
 				b := toInteger(n.Right)
 				if a != nil && b != nil {
-					patch(&BoolNode{Value: a.Value == b.Value})
+					patch(&ast.BoolNode{Value: a.Value == b.Value})
 				}
 			}
 			{
 				a := toString(n.Left)
 				b := toString(n.Right)
 				if a != nil && b != nil {
-					patch(&BoolNode{Value: a.Value == b.Value})
+					patch(&ast.BoolNode{Value: a.Value == b.Value})
 				}
 			}
 			{
 				a := toBool(n.Left)
 				b := toBool(n.Right)
 				if a != nil && b != nil {
-					patch(&BoolNode{Value: a.Value == b.Value})
+					patch(&ast.BoolNode{Value: a.Value == b.Value})
 				}
 			}
 		}
 
-	case *ArrayNode:
+	case *ast.ArrayNode:
 		if len(n.Nodes) > 0 {
 			for _, a := range n.Nodes {
 				switch a.(type) {
-				case *IntegerNode, *FloatNode, *StringNode, *BoolNode:
+				case *ast.IntegerNode, *ast.FloatNode, *ast.StringNode, *ast.BoolNode:
 					continue
 				default:
 					return
 				}
 			}
-			value := make([]interface{}, len(n.Nodes))
+			value := make([]any, len(n.Nodes))
 			for i, a := range n.Nodes {
 				switch b := a.(type) {
-				case *IntegerNode:
+				case *ast.IntegerNode:
 					value[i] = b.Value
-				case *FloatNode:
+				case *ast.FloatNode:
 					value[i] = b.Value
-				case *StringNode:
+				case *ast.StringNode:
 					value[i] = b.Value
-				case *BoolNode:
+				case *ast.BoolNode:
 					value[i] = b.Value
 				}
 			}
-			patch(&ConstantNode{Value: value})
+			patch(&ast.ConstantNode{Value: value})
 		}
 
-	case *BuiltinNode:
+	case *ast.BuiltinNode:
 		switch n.Name {
 		case "filter":
 			if len(n.Arguments) != 2 {
 				return
 			}
-			if base, ok := n.Arguments[0].(*BuiltinNode); ok && base.Name == "filter" {
-				patch(&BuiltinNode{
+			if base, ok := n.Arguments[0].(*ast.BuiltinNode); ok && base.Name == "filter" {
+				patch(&ast.BuiltinNode{
 					Name: "filter",
-					Arguments: []Node{
+					Arguments: []ast.Node{
 						base.Arguments[0],
-						&BinaryNode{
+						&ast.BinaryNode{
 							Operator: "&&",
 							Left:     base.Arguments[1],
 							Right:    n.Arguments[1],
@@ -310,33 +324,33 @@ func (fold *fold) Visit(node *Node) {
 	}
 }
 
-func toString(n Node) *StringNode {
+func toString(n ast.Node) *ast.StringNode {
 	switch a := n.(type) {
-	case *StringNode:
+	case *ast.StringNode:
 		return a
 	}
 	return nil
 }
 
-func toInteger(n Node) *IntegerNode {
+func toInteger(n ast.Node) *ast.IntegerNode {
 	switch a := n.(type) {
-	case *IntegerNode:
+	case *ast.IntegerNode:
 		return a
 	}
 	return nil
 }
 
-func toFloat(n Node) *FloatNode {
+func toFloat(n ast.Node) *ast.FloatNode {
 	switch a := n.(type) {
-	case *FloatNode:
+	case *ast.FloatNode:
 		return a
 	}
 	return nil
 }
 
-func toBool(n Node) *BoolNode {
+func toBool(n ast.Node) *ast.BoolNode {
 	switch a := n.(type) {
-	case *BoolNode:
+	case *ast.BoolNode:
 		return a
 	}
 	return nil

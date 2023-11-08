@@ -1,15 +1,15 @@
 package optimizer
 
 import (
-	. "github.com/oarkflow/expr/ast"
+	ast2 "github.com/oarkflow/expr/ast"
 	"github.com/oarkflow/expr/conf"
 )
 
-func Optimize(node *Node, config *conf.Config) error {
-	Walk(node, &inArray{})
+func Optimize(node *ast2.Node, config *conf.Config) error {
+	ast2.Walk(node, &inArray{})
 	for limit := 1000; limit >= 0; limit-- {
 		fold := &fold{}
-		Walk(node, fold)
+		ast2.Walk(node, fold)
 		if fold.err != nil {
 			return fold.err
 		}
@@ -22,7 +22,7 @@ func Optimize(node *Node, config *conf.Config) error {
 			constExpr := &constExpr{
 				fns: config.ConstFns,
 			}
-			Walk(node, constExpr)
+			ast2.Walk(node, constExpr)
 			if constExpr.err != nil {
 				return constExpr.err
 			}
@@ -31,7 +31,11 @@ func Optimize(node *Node, config *conf.Config) error {
 			}
 		}
 	}
-	Walk(node, &inRange{})
-	Walk(node, &constRange{})
+	ast2.Walk(node, &inRange{})
+	ast2.Walk(node, &constRange{})
+	ast2.Walk(node, &filterMap{})
+	ast2.Walk(node, &filterLen{})
+	ast2.Walk(node, &filterLast{})
+	ast2.Walk(node, &filterFirst{})
 	return nil
 }

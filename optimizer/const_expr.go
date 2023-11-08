@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"strings"
 
-	. "github.com/oarkflow/expr/ast"
+	"github.com/oarkflow/expr/ast"
 	"github.com/oarkflow/expr/file"
 )
 
@@ -17,7 +17,7 @@ type constExpr struct {
 	fns     map[string]reflect.Value
 }
 
-func (c *constExpr) Visit(node *Node) {
+func (c *constExpr) Visit(node *ast.Node) {
 	defer func() {
 		if r := recover(); r != nil {
 			msg := fmt.Sprintf("%v", r)
@@ -30,32 +30,32 @@ func (c *constExpr) Visit(node *Node) {
 		}
 	}()
 
-	patch := func(newNode Node) {
+	patch := func(newNode ast.Node) {
 		c.applied = true
-		Patch(node, newNode)
+		ast.Patch(node, newNode)
 	}
 
-	if call, ok := (*node).(*CallNode); ok {
-		if name, ok := call.Callee.(*IdentifierNode); ok {
+	if call, ok := (*node).(*ast.CallNode); ok {
+		if name, ok := call.Callee.(*ast.IdentifierNode); ok {
 			fn, ok := c.fns[name.Value]
 			if ok {
 				in := make([]reflect.Value, len(call.Arguments))
 				for i := 0; i < len(call.Arguments); i++ {
 					arg := call.Arguments[i]
-					var param interface{}
+					var param any
 
 					switch a := arg.(type) {
-					case *NilNode:
+					case *ast.NilNode:
 						param = nil
-					case *IntegerNode:
+					case *ast.IntegerNode:
 						param = a.Value
-					case *FloatNode:
+					case *ast.FloatNode:
 						param = a.Value
-					case *BoolNode:
+					case *ast.BoolNode:
 						param = a.Value
-					case *StringNode:
+					case *ast.StringNode:
 						param = a.Value
-					case *ConstantNode:
+					case *ast.ConstantNode:
 						param = a.Value
 
 					default:
@@ -77,7 +77,7 @@ func (c *constExpr) Visit(node *Node) {
 					c.err = out[1].Interface().(error)
 					return
 				}
-				constNode := &ConstantNode{Value: value}
+				constNode := &ast.ConstantNode{Value: value}
 				patch(constNode)
 			}
 		}

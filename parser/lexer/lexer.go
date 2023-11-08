@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
-	
+
 	"github.com/oarkflow/expr/file"
 )
 
@@ -13,19 +13,19 @@ func Lex(source *file.Source) ([]Token, error) {
 		input:  source.Content(),
 		tokens: make([]Token, 0),
 	}
-	
+
 	l.loc = file.Location{Line: 1, Column: 0}
 	l.prev = l.loc
 	l.startLoc = l.loc
-	
+
 	for state := root; state != nil; {
 		state = state(l)
 	}
-	
+
 	if l.err != nil {
 		return nil, l.err.Bind(source)
 	}
-	
+
 	return l.tokens, nil
 }
 
@@ -49,7 +49,7 @@ func (l *lexer) next() rune {
 	r, w := utf8.DecodeRuneInString(l.input[l.end:])
 	l.width = w
 	l.end += w
-	
+
 	l.prev = l.loc
 	if r == '\n' {
 		l.loc.Line++
@@ -57,7 +57,7 @@ func (l *lexer) next() rune {
 	} else {
 		l.loc.Column++
 	}
-	
+
 	return r
 }
 
@@ -133,9 +133,9 @@ func (l *lexer) skipSpaces() {
 
 func (l *lexer) acceptWord(word string) bool {
 	pos, loc, prev := l.end, l.loc, l.prev
-	
+
 	l.skipSpaces()
-	
+
 	for _, ch := range word {
 		if l.next() != ch {
 			l.end, l.loc, l.prev = pos, loc, prev
@@ -146,11 +146,11 @@ func (l *lexer) acceptWord(word string) bool {
 		l.end, l.loc, l.prev = pos, loc, prev
 		return false
 	}
-	
+
 	return true
 }
 
-func (l *lexer) error(format string, args ...interface{}) stateFn {
+func (l *lexer) error(format string, args ...any) stateFn {
 	if l.err == nil { // show first error
 		l.err = &file.Error{
 			Location: l.loc,
