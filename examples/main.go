@@ -32,5 +32,6 @@ func main() {
 		panic(err)
 	}
 	fmt.Println(p)
+	fmt.Println(expr.AvailableFunctions())
 	fmt.Println(fmt.Sprintf("%s", time.Since(start)))
 }

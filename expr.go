@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/oarkflow/expr/ast"
+	"github.com/oarkflow/expr/builtin"
 	"github.com/oarkflow/expr/checker"
 	"github.com/oarkflow/expr/compiler"
 	"github.com/oarkflow/expr/conf"
@@ -33,6 +34,16 @@ func AddFunction(name string, handler func(params ...any) (any, error)) {
 	customFunctions.mu.Lock()
 	defer customFunctions.mu.Unlock()
 	customFunctions.funcs[name] = handler
+}
+
+func AvailableFunctions() []string {
+	customFunctions.mu.Lock()
+	defer customFunctions.mu.Unlock()
+	names := builtin.Names
+	for name, _ := range customFunctions.funcs {
+		names = append(names, name)
+	}
+	return names
 }
 
 func Parse(expr string) (*vm.Program, error) {
