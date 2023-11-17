@@ -36,7 +36,7 @@ func unescape(value string) (string, error) {
 	}
 
 	// Quoted string of some form, must have same first and last char.
-	if value[0] != value[n-1] || (value[0] != '"' && value[0] != '\'') {
+	if value[0] != value[n-1] || (value[0] != '"' && value[0] != '\'' && value[0] != '`') {
 		return value, fmt.Errorf("unable to unescape string")
 	}
 
