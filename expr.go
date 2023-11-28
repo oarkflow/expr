@@ -201,7 +201,7 @@ func Compile(input string, ops ...Option) (*vm.Program, error) {
 	for name := range config.Disabled {
 		delete(config.Builtins, name)
 	}
-	config.Check()
+	// config.Check()
 
 	if len(config.Operators) > 0 {
 		config.Visitors = append(config.Visitors, &conf.OperatorPatcher{
