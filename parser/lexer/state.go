@@ -16,7 +16,7 @@ func root(l *lexer) stateFn {
 	case utils.IsSpace(r):
 		l.ignore()
 		return root
-	case r == '\'' || r == '"':
+	case r == '\'' || r == '"' || r == '`':
 		l.scanString(r)
 		str, err := unescape(l.word())
 		if err != nil {
