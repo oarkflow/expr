@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -551,7 +552,44 @@ var Builtins = []*ast.Function{
 	{
 		Name: "now",
 		Func: func(args ...any) (any, error) {
+			layouts := []string{
+				"2006-01-02",
+				"15:04:05",
+				"2006-01-02 15:04:05",
+				time.RFC3339,
+				time.RFC822,
+				time.RFC850,
+				time.RFC1123,
+			}
+			if len(args) > 0 {
+				layout := args[0].(string)
+				if slices.Contains(layouts, layout) {
+					return time.Now().Format(layout), nil
+				}
+			}
 			return time.Now(), nil
+		},
+		Types: types(new(func() time.Time)),
+	},
+	{
+		Name: "now_utc",
+		Func: func(args ...any) (any, error) {
+			layouts := []string{
+				"2006-01-02",
+				"15:04:05",
+				"2006-01-02 15:04:05",
+				time.RFC3339,
+				time.RFC822,
+				time.RFC850,
+				time.RFC1123,
+			}
+			if len(args) > 0 {
+				layout := args[0].(string)
+				if slices.Contains(layouts, layout) {
+					return time.Now().UTC().Format(layout), nil
+				}
+			}
+			return time.Now().UTC(), nil
 		},
 		Types: types(new(func() time.Time)),
 	},

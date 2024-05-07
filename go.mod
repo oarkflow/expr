@@ -1,3 +1,3 @@
 module github.com/oarkflow/expr
 
-go 1.21
+go 1.22
