@@ -58,6 +58,7 @@ const (
 	OpCall3
 	OpCallN
 	OpCallFast
+	OpCallSafe
 	OpCallTyped
 	OpCallBuiltin1
 	OpArray
@@ -69,15 +70,19 @@ const (
 	OpDecrementIndex
 	OpIncrementCount
 	OpGetIndex
-	OpSetIndex
 	OpGetCount
 	OpGetLen
-	OpGetGroupBy
 	OpGetAcc
+	OpSetAcc
+	OpSetIndex
 	OpPointer
 	OpThrow
+	OpCreate
 	OpGroupBy
-	OpSetAcc
+	OpSortBy
+	OpSort
+	OpProfileStart
+	OpProfileEnd
 	OpBegin
 	OpEnd // This opcode must be at the end of this list.
 )

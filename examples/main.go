@@ -11,6 +11,10 @@ func main() {
 	expr.AddFunction("current_date", func(params ...any) (any, error) {
 		return time.Now().Format(time.DateOnly), nil
 	})
+	expr.AddFunction("roles", func(params ...any) (any, error) {
+		fmt.Println(params[0])
+		return nil, nil
+	})
 	data := map[string]interface{}{
 		"name": "Sujit Baniya",
 		"address": map[string]any{
@@ -26,12 +30,9 @@ func main() {
 		"start_date": "2021-09-01",
 		"end_date":   "2022-09-30",
 	}
-	start := time.Now()
-	p, err := expr.Eval("hasPrefix('Apple', 'A1p')", data)
+	p, err := expr.Eval("roles(['Coder','QA'])", data)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println(p)
-	fmt.Println(expr.AvailableFunctions())
-	fmt.Println(fmt.Sprintf("%s", time.Since(start)))
 }

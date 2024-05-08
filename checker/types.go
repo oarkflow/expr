@@ -18,7 +18,6 @@ var (
 	anyType      = reflect.TypeOf(new(any)).Elem()
 	timeType     = reflect.TypeOf(time.Time{})
 	durationType = reflect.TypeOf(time.Duration(0))
-	functionType = reflect.TypeOf(new(func(...any) (any, error))).Elem()
 )
 
 func combined(a, b reflect.Type) reflect.Type {
@@ -192,7 +191,11 @@ func fetchField(t reflect.Type, name string) (reflect.StructField, bool) {
 		for i := 0; i < t.NumField(); i++ {
 			anon := t.Field(i)
 			if anon.Anonymous {
-				if field, ok := fetchField(anon.Type, name); ok {
+				anonType := anon.Type
+				if anonType.Kind() == reflect.Pointer {
+					anonType = anonType.Elem()
+				}
+				if field, ok := fetchField(anonType, name); ok {
 					field.Index = append(anon.Index, field.Index...)
 					return field, true
 				}
@@ -200,25 +203,6 @@ func fetchField(t reflect.Type, name string) (reflect.StructField, bool) {
 		}
 	}
 	return reflect.StructField{}, false
-}
-
-func deref(t reflect.Type) reflect.Type {
-	if t == nil {
-		return nil
-	}
-	if t.Kind() == reflect.Interface {
-		return t
-	}
-	for t != nil && t.Kind() == reflect.Ptr {
-		e := t.Elem()
-		switch e.Kind() {
-		case reflect.Struct, reflect.Map, reflect.Array, reflect.Slice:
-			return t
-		default:
-			t = e
-		}
-	}
-	return t
 }
 
 func kind(t reflect.Type) reflect.Kind {

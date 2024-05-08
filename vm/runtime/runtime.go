@@ -1,18 +1,18 @@
 package runtime
 
-//go:generate sh -c "go run ./helpers > ./generated.go"
+//go:generate sh -c "go run ./helpers > ./helpers[generated].go"
 
 import (
 	"fmt"
 	"math"
 	"reflect"
-	"strconv"
+
+	"github.com/oarkflow/expr/internal/deref"
 )
 
 func Fetch(from, i any) any {
 	v := reflect.ValueOf(from)
-	kind := v.Kind()
-	if kind == reflect.Invalid {
+	if v.Kind() == reflect.Invalid {
 		panic(fmt.Sprintf("cannot fetch %v from %T", i, from))
 	}
 
@@ -29,14 +29,10 @@ func Fetch(from, i any) any {
 	// Structs, maps, and slices can be access through a pointer or through
 	// a value, when they are accessed through a pointer we don't want to
 	// copy them to a value.
-	if kind == reflect.Ptr {
-		v = reflect.Indirect(v)
-		kind = v.Kind()
-	}
+	// De-reference everything if necessary (interface and pointers)
+	v = deref.Value(v)
 
-	// TODO: We can create separate opcodes for each of the cases below to make
-	// the little bit faster.
-	switch kind {
+	switch v.Kind() {
 	case reflect.Array, reflect.Slice, reflect.String:
 		index := ToInt(i)
 		if index < 0 {
@@ -84,11 +80,9 @@ type Field struct {
 
 func FetchField(from any, field *Field) any {
 	v := reflect.ValueOf(from)
-	kind := v.Kind()
-	if kind != reflect.Invalid {
-		if kind == reflect.Ptr {
-			v = reflect.Indirect(v)
-		}
+	if v.Kind() != reflect.Invalid {
+		v = reflect.Indirect(v)
+
 		// We can use v.FieldByIndex here, but it will panic if the field
 		// is not exists. And we need to recover() to generate a more
 		// user-friendly error message.
@@ -137,41 +131,6 @@ func FetchMethod(from any, method *Method) any {
 		}
 	}
 	panic(fmt.Sprintf("cannot fetch %v from %T", method.Name, from))
-}
-
-func Deref(i any) any {
-	if i == nil {
-		return nil
-	}
-
-	v := reflect.ValueOf(i)
-
-	if v.Kind() == reflect.Interface {
-		if v.IsNil() {
-			return i
-		}
-		v = v.Elem()
-	}
-
-loop:
-	for v.Kind() == reflect.Ptr {
-		if v.IsNil() {
-			return i
-		}
-		indirect := reflect.Indirect(v)
-		switch indirect.Kind() {
-		case reflect.Struct, reflect.Map, reflect.Array, reflect.Slice:
-			break loop
-		default:
-			v = v.Elem()
-		}
-	}
-
-	if v.IsValid() {
-		return v.Interface()
-	}
-
-	panic(fmt.Sprintf("cannot dereference %v", i))
 }
 
 func Slice(array, from, to any) any {
@@ -350,12 +309,6 @@ func ToInt(a any) int {
 		return int(x)
 	case uint64:
 		return int(x)
-	case string:
-		i, err := strconv.Atoi(x)
-		if err != nil {
-			panic(fmt.Sprintf("invalid operation: int(%s)", x))
-		}
-		return i
 	default:
 		panic(fmt.Sprintf("invalid operation: int(%T)", x))
 	}
@@ -418,12 +371,6 @@ func ToFloat64(a any) float64 {
 		return float64(x)
 	case uint64:
 		return float64(x)
-	case string:
-		f, err := strconv.ParseFloat(x, 64)
-		if err != nil {
-			panic(fmt.Sprintf("invalid operation: float(%s)", x))
-		}
-		return f
 	default:
 		panic(fmt.Sprintf("invalid operation: float(%T)", x))
 	}

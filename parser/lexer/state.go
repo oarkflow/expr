@@ -16,13 +16,15 @@ func root(l *lexer) stateFn {
 	case utils.IsSpace(r):
 		l.ignore()
 		return root
-	case r == '\'' || r == '"' || r == '`':
+	case r == '\'' || r == '"':
 		l.scanString(r)
 		str, err := unescape(l.word())
 		if err != nil {
 			l.error("%v", err)
 		}
 		l.emitValue(String, str)
+	case r == '`':
+		l.scanRawString(r)
 	case '0' <= r && r <= '9':
 		l.backup()
 		return number
@@ -35,11 +37,14 @@ func root(l *lexer) stateFn {
 	case r == '|':
 		l.accept("|")
 		l.emit(Operator)
+	case r == ':':
+		l.accept(":")
+		l.emit(Operator)
 	case strings.ContainsRune("([{", r):
 		l.emit(Bracket)
 	case strings.ContainsRune(")]}", r):
 		l.emit(Bracket)
-	case strings.ContainsRune(",:;%+-^", r): // single rune operator
+	case strings.ContainsRune(",;%+-^", r): // single rune operator
 		l.emit(Operator)
 	case strings.ContainsRune("&!=*<>", r): // possible double rune operator
 		l.accept("&=*")
@@ -126,6 +131,8 @@ loop:
 				return not
 			case "in", "or", "and", "matches", "contains", "startsWith", "endsWith":
 				l.emit(Operator)
+			case "env":
+				return literalIdentifier
 			case "let":
 				l.emit(Operator)
 			default:
@@ -133,6 +140,34 @@ loop:
 			}
 			break loop
 		}
+	}
+	return root
+}
+
+// Process what comes after the env keyword, which must be any
+// set of characters or a string literal, enclosed in square brackets
+func literalIdentifier(l *lexer) stateFn {
+	// Be very strict about syntax so as not to break someone's "env" identifier
+	if l.next() == '[' {
+		l.ignore() // Forget about the "env" keyword and its opening bracket
+		if r := l.next(); r == '\'' || r == '"' {
+			l.scanString(r)
+			str, err := unescape(l.word())
+			if err != nil {
+				l.error("%v", err)
+			}
+			if l.next() == ']' {
+				l.ignore()
+				l.emitValue(Identifier, str)
+			} else {
+				return l.error("env keyword with no closing bracket")
+			}
+		} else {
+			return l.error("env keyword must have string index")
+		}
+	} else {
+		l.backup()
+		l.emit(Identifier)
 	}
 	return root
 }

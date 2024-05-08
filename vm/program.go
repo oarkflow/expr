@@ -15,31 +15,74 @@ import (
 	"github.com/oarkflow/expr/vm/runtime"
 )
 
+// Program represents a compiled expression.
 type Program struct {
-	Node      ast.Node
-	Source    *file.Source
-	Locations []file.Location
-	Variables []any
-	Constants []any
 	Bytecode  []Opcode
 	Arguments []int
-	Functions []Function
-	DebugInfo map[string]string
+	Constants []any
+
+	source    *file.Source
+	node      ast.Node
+	locations []file.Location
+	variables int
+	functions []Function
+	debugInfo map[string]string
+	span      *Span
 }
 
-func (program *Program) Eval(param any) (any, error) {
-	return Run(program, param)
+// NewProgram returns a new Program. It's used by the compiler.
+func NewProgram(
+	source *file.Source,
+	node ast.Node,
+	locations []file.Location,
+	variables int,
+	constants []any,
+	bytecode []Opcode,
+	arguments []int,
+	functions []Function,
+	debugInfo map[string]string,
+	span *Span,
+) *Program {
+	return &Program{
+		source:    source,
+		node:      node,
+		locations: locations,
+		variables: variables,
+		Constants: constants,
+		Bytecode:  bytecode,
+		Arguments: arguments,
+		functions: functions,
+		debugInfo: debugInfo,
+		span:      span,
+	}
 }
 
+// Source returns origin file.Source.
+func (program *Program) Source() *file.Source {
+	return program.source
+}
+
+// Node returns origin ast.Node.
+func (program *Program) Node() ast.Node {
+	return program.node
+}
+
+// Locations returns a slice of bytecode's locations.
+func (program *Program) Locations() []file.Location {
+	return program.locations
+}
+
+// Disassemble returns opcodes as a string.
 func (program *Program) Disassemble() string {
 	var buf bytes.Buffer
 	w := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)
-	program.Opcodes(w)
+	program.DisassembleWriter(w)
 	_ = w.Flush()
 	return buf.String()
 }
 
-func (program *Program) Opcodes(w io.Writer) {
+// DisassembleWriter takes a writer and writes opcodes to it.
+func (program *Program) DisassembleWriter(w io.Writer) {
 	ip := 0
 	for ip < len(program.Bytecode) {
 		pp := ip
@@ -60,7 +103,7 @@ func (program *Program) Opcodes(w io.Writer) {
 			_, _ = fmt.Fprintf(w, "%v\t%v\t<%v>\n", pp, label, arg)
 		}
 		argumentWithInfo := func(label string, prefix string) {
-			_, _ = fmt.Fprintf(w, "%v\t%v\t<%v>\t%v\n", pp, label, arg, program.DebugInfo[fmt.Sprintf("%s_%d", prefix, arg)])
+			_, _ = fmt.Fprintf(w, "%v\t%v\t<%v>\t%v\n", pp, label, arg, program.debugInfo[fmt.Sprintf("%s_%d", prefix, arg)])
 		}
 		constant := func(label string) {
 			var c any
@@ -116,7 +159,7 @@ func (program *Program) Opcodes(w io.Writer) {
 			constant("OpLoadMethod")
 
 		case OpLoadFunc:
-			argument("OpLoadFunc")
+			argumentWithInfo("OpLoadFunc", "func")
 
 		case OpLoadEnv:
 			code("OpLoadEnv")
@@ -250,6 +293,9 @@ func (program *Program) Opcodes(w io.Writer) {
 		case OpCallFast:
 			argument("OpCallFast")
 
+		case OpCallSafe:
+			argument("OpCallSafe")
+
 		case OpCallTyped:
 			signature := reflect.TypeOf(FuncTypes[arg]).Elem().String()
 			_, _ = fmt.Fprintf(w, "%v\t%v\t<%v>\t%v\n", pp, "OpCallTyped", arg, signature)
@@ -284,20 +330,20 @@ func (program *Program) Opcodes(w io.Writer) {
 		case OpGetIndex:
 			code("OpGetIndex")
 
-		case OpSetIndex:
-			code("OpSetIndex")
-
 		case OpGetCount:
 			code("OpGetCount")
 
 		case OpGetLen:
 			code("OpGetLen")
 
-		case OpGetGroupBy:
-			code("OpGetGroupBy")
-
 		case OpGetAcc:
 			code("OpGetAcc")
+
+		case OpSetAcc:
+			code("OpSetAcc")
+
+		case OpSetIndex:
+			code("OpSetIndex")
 
 		case OpPointer:
 			code("OpPointer")
@@ -305,11 +351,23 @@ func (program *Program) Opcodes(w io.Writer) {
 		case OpThrow:
 			code("OpThrow")
 
+		case OpCreate:
+			argument("OpCreate")
+
 		case OpGroupBy:
 			code("OpGroupBy")
 
-		case OpSetAcc:
-			code("OpSetAcc")
+		case OpSortBy:
+			code("OpSortBy")
+
+		case OpSort:
+			code("OpSort")
+
+		case OpProfileStart:
+			code("OpProfileStart")
+
+		case OpProfileEnd:
+			code("OpProfileEnd")
 
 		case OpBegin:
 			code("OpBegin")

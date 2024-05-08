@@ -9,8 +9,8 @@ import (
 	"github.com/oarkflow/expr/builtin"
 	"github.com/oarkflow/expr/conf"
 	"github.com/oarkflow/expr/file"
+	"github.com/oarkflow/expr/internal/deref"
 	"github.com/oarkflow/expr/parser"
-	"github.com/oarkflow/expr/vm"
 )
 
 func Check(tree *parser.Tree, config *conf.Config) (t reflect.Type, err error) {
@@ -55,7 +55,6 @@ type checker struct {
 	config          *conf.Config
 	predicateScopes []predicateScope
 	varScopes       []varScope
-	parents         []ast.Node
 	err             *file.Error
 }
 
@@ -72,7 +71,7 @@ type varScope struct {
 
 type info struct {
 	method bool
-	fn     *ast.Function
+	fn     *builtin.Function
 
 	// elem is element type of array or map.
 	// Arrays created with type []any, but
@@ -84,7 +83,6 @@ type info struct {
 func (v *checker) visit(node ast.Node) (reflect.Type, info) {
 	var t reflect.Type
 	var i info
-	v.parents = append(v.parents, node)
 	switch n := node.(type) {
 	case *ast.NilNode:
 		t, i = v.NilNode(n)
@@ -131,7 +129,6 @@ func (v *checker) visit(node ast.Node) (reflect.Type, info) {
 	default:
 		panic(fmt.Sprintf("undefined node type (%T)", node))
 	}
-	v.parents = v.parents[:len(v.parents)-1]
 	node.SetType(t)
 	return t, i
 }
@@ -157,23 +154,27 @@ func (v *checker) IdentifierNode(node *ast.IdentifierNode) (reflect.Type, info) 
 	if node.Value == "$env" {
 		return mapType, info{}
 	}
-	if fn, ok := v.config.Builtins[node.Value]; ok {
-		return functionType, info{fn: fn}
-	}
-	if fn, ok := v.config.Functions[node.Value]; ok {
-		return functionType, info{fn: fn}
-	}
-	if t, ok := v.config.Types[node.Value]; ok {
+	return v.ident(node, node.Value, true, true)
+}
+
+// ident method returns type of environment variable, builtin or function.
+func (v *checker) ident(node ast.Node, name string, strict, builtins bool) (reflect.Type, info) {
+	if t, ok := v.config.Types[name]; ok {
 		if t.Ambiguous {
-			return v.error(node, "ambiguous identifier %v", node.Value)
+			return v.error(node, "ambiguous identifier %v", name)
 		}
-		node.Method = t.Method
-		node.MethodIndex = t.MethodIndex
-		node.FieldIndex = t.FieldIndex
 		return t.Type, info{method: t.Method}
 	}
-	if v.config.Strict {
-		return v.error(node, "unknown name %v", node.Value)
+	if builtins {
+		if fn, ok := v.config.Functions[name]; ok {
+			return fn.Type(), info{fn: fn}
+		}
+		if fn, ok := v.config.Builtins[name]; ok {
+			return fn.Type(), info{fn: fn}
+		}
+	}
+	if v.config.Strict && strict {
+		return v.error(node, "unknown name %v", name)
 	}
 	if v.config.DefaultType != nil {
 		return v.config.DefaultType, info{}
@@ -203,8 +204,7 @@ func (v *checker) ConstantNode(node *ast.ConstantNode) (reflect.Type, info) {
 
 func (v *checker) UnaryNode(node *ast.UnaryNode) (reflect.Type, info) {
 	t, _ := v.visit(node.Node)
-
-	t = deref(t)
+	t = deref.Type(t)
 
 	switch node.Operator {
 
@@ -235,16 +235,8 @@ func (v *checker) BinaryNode(node *ast.BinaryNode) (reflect.Type, info) {
 	l, _ := v.visit(node.Left)
 	r, ri := v.visit(node.Right)
 
-	l = deref(l)
-	r = deref(r)
-
-	// check operator overloading
-	if fns, ok := v.config.Operators[node.Operator]; ok {
-		t, _, ok := conf.FindSuitableOperatorOverload(fns, v.config.Types, l, r)
-		if ok {
-			return t, info{}
-		}
-	}
+	l = deref.Type(l)
+	r = deref.Type(r)
 
 	switch node.Operator {
 	case "==", "!=":
@@ -371,11 +363,10 @@ func (v *checker) BinaryNode(node *ast.BinaryNode) (reflect.Type, info) {
 
 	case "matches":
 		if s, ok := node.Right.(*ast.StringNode); ok {
-			r, err := regexp.Compile(s.Value)
+			_, err := regexp.Compile(s.Value)
 			if err != nil {
 				return v.error(node, err.Error())
 			}
-			node.Regexp = r
 		}
 		if isString(l) && isString(r) {
 			return boolType, info{}
@@ -429,19 +420,24 @@ func (v *checker) ChainNode(node *ast.ChainNode) (reflect.Type, info) {
 }
 
 func (v *checker) MemberNode(node *ast.MemberNode) (reflect.Type, info) {
-	base, _ := v.visit(node.Node)
-	prop, _ := v.visit(node.Property)
-
+	// $env variable
 	if an, ok := node.Node.(*ast.IdentifierNode); ok && an.Value == "$env" {
-		// If the index is a constant string, can save some
-		// cycles later by finding the type of its referent
 		if name, ok := node.Property.(*ast.StringNode); ok {
-			if t, ok := v.config.Types[name.Value]; ok {
-				return t.Type, info{method: t.Method}
-			} // No error if no type found; it may be added to env between compile and run
+			strict := v.config.Strict
+			if node.Optional {
+				// If user explicitly set optional flag, then we should not
+				// throw error if field is not found (as user trying to handle
+				// this case). But if user did not set optional flag, then we
+				// should throw error if field is not found & v.config.Strict.
+				strict = false
+			}
+			return v.ident(node, name.Value, strict, false /* no builtins and no functions */)
 		}
 		return anyType, info{}
 	}
+
+	base, _ := v.visit(node.Node)
+	prop, _ := v.visit(node.Property)
 
 	if name, ok := node.Property.(*ast.StringNode); ok {
 		if base == nil {
@@ -460,9 +456,6 @@ func (v *checker) MemberNode(node *ast.MemberNode) (reflect.Type, info) {
 				// the same interface.
 				return m.Type, info{}
 			} else {
-				node.Method = true
-				node.MethodIndex = m.Index
-				node.Name = name.Value
 				return m.Type, info{method: true}
 			}
 		}
@@ -492,14 +485,10 @@ func (v *checker) MemberNode(node *ast.MemberNode) (reflect.Type, info) {
 		if name, ok := node.Property.(*ast.StringNode); ok {
 			propertyName := name.Value
 			if field, ok := fetchField(base, propertyName); ok {
-				node.FieldIndex = field.Index
-				node.Name = propertyName
 				return field.Type, info{}
 			}
-			if len(v.parents) > 1 {
-				if _, ok := v.parents[len(v.parents)-2].(*ast.CallNode); ok {
-					return v.error(node, "type %v has no method %v", base, propertyName)
-				}
+			if node.Method {
+				return v.error(node, "type %v has no method %v", base, propertyName)
 			}
 			return v.error(node, "type %v has no field %v", base, propertyName)
 		}
@@ -536,10 +525,30 @@ func (v *checker) SliceNode(node *ast.SliceNode) (reflect.Type, info) {
 }
 
 func (v *checker) CallNode(node *ast.CallNode) (reflect.Type, info) {
+	t, i := v.functionReturnType(node)
+
+	// Check if type was set on node (for example, by patcher)
+	// and use node type instead of function return type.
+	//
+	// If node type is anyType, then we should use function
+	// return type. For example, on error we return anyType
+	// for a call `errCall().Method()` and method will be
+	// evaluated on `anyType.Method()`, so return type will
+	// be anyType `anyType.Method(): anyType`. Patcher can
+	// fix `errCall()` to return proper type, so on second
+	// checker pass we should replace anyType on method node
+	// with new correct function return type.
+	if node.Type() != nil && node.Type() != anyType {
+		return node.Type(), i
+	}
+
+	return t, i
+}
+
+func (v *checker) functionReturnType(node *ast.CallNode) (reflect.Type, info) {
 	fn, fnInfo := v.visit(node.Callee)
 
 	if fnInfo.fn != nil {
-		node.Func = fnInfo.fn
 		return v.checkFunction(fnInfo.fn, node, node.Arguments)
 	}
 
@@ -552,27 +561,15 @@ func (v *checker) CallNode(node *ast.CallNode) (reflect.Type, info) {
 			fnName = name.Value
 		}
 	}
+
+	if fn == nil {
+		return v.error(node, "%v is nil; cannot call nil as function", fnName)
+	}
+
 	switch fn.Kind() {
 	case reflect.Interface:
 		return anyType, info{}
 	case reflect.Func:
-		inputParamsCount := 1 // for functions
-		if fnInfo.method {
-			inputParamsCount = 2 // for methods
-		}
-		// TODO: Deprecate OpCallFast and move fn(...any) any to TypedFunc list.
-		// To do this we need add support for variadic arguments in OpCallTyped.
-		if !isAny(fn) &&
-			fn.IsVariadic() &&
-			fn.NumIn() == inputParamsCount &&
-			fn.NumOut() == 1 &&
-			fn.Out(0).Kind() == reflect.Interface {
-			rest := fn.In(fn.NumIn() - 1) // function has only one param for functions and two for methods
-			if kind(rest) == reflect.Slice && rest.Elem().Kind() == reflect.Interface {
-				node.Fast = true
-			}
-		}
-
 		outType, err := v.checkArguments(fnName, fn, fnInfo.method, node.Arguments, node)
 		if err != nil {
 			if v.err == nil {
@@ -580,9 +577,6 @@ func (v *checker) CallNode(node *ast.CallNode) (reflect.Type, info) {
 			}
 			return anyType, info{}
 		}
-
-		v.findTypedFunc(node, fn, fnInfo.method)
-
 		return outType, info{}
 	}
 	return v.error(node, "%v is not callable", fn)
@@ -631,7 +625,7 @@ func (v *checker) BuiltinNode(node *ast.BuiltinNode) (reflect.Type, info) {
 			if isAny(collection) {
 				return arrayType, info{}
 			}
-			return reflect.SliceOf(collection.Elem()), info{}
+			return arrayType, info{}
 		}
 		return v.error(node.Arguments[1], "predicate should has one input and one output param")
 
@@ -649,7 +643,7 @@ func (v *checker) BuiltinNode(node *ast.BuiltinNode) (reflect.Type, info) {
 			closure.NumOut() == 1 &&
 			closure.NumIn() == 1 && isAny(closure.In(0)) {
 
-			return reflect.SliceOf(closure.Out(0)), info{}
+			return arrayType, info{}
 		}
 		return v.error(node.Arguments[1], "predicate should has one input and one output param")
 
@@ -657,6 +651,10 @@ func (v *checker) BuiltinNode(node *ast.BuiltinNode) (reflect.Type, info) {
 		collection, _ := v.visit(node.Arguments[0])
 		if !isArray(collection) && !isAny(collection) {
 			return v.error(node.Arguments[0], "builtin %v takes only array (got %v)", node.Name, collection)
+		}
+
+		if len(node.Arguments) == 1 {
+			return integerType, info{}
 		}
 
 		v.begin(collection)
@@ -673,6 +671,29 @@ func (v *checker) BuiltinNode(node *ast.BuiltinNode) (reflect.Type, info) {
 			return integerType, info{}
 		}
 		return v.error(node.Arguments[1], "predicate should has one input and one output param")
+
+	case "sum":
+		collection, _ := v.visit(node.Arguments[0])
+		if !isArray(collection) && !isAny(collection) {
+			return v.error(node.Arguments[0], "builtin %v takes only array (got %v)", node.Name, collection)
+		}
+
+		if len(node.Arguments) == 2 {
+			v.begin(collection)
+			closure, _ := v.visit(node.Arguments[1])
+			v.end()
+
+			if isFunc(closure) &&
+				closure.NumOut() == 1 &&
+				closure.NumIn() == 1 && isAny(closure.In(0)) {
+				return closure.Out(0), info{}
+			}
+		} else {
+			if isAny(collection) {
+				return anyType, info{}
+			}
+			return collection.Elem(), info{}
+		}
 
 	case "find", "findLast":
 		collection, _ := v.visit(node.Arguments[0])
@@ -734,6 +755,28 @@ func (v *checker) BuiltinNode(node *ast.BuiltinNode) (reflect.Type, info) {
 			closure.NumIn() == 1 && isAny(closure.In(0)) {
 
 			return reflect.TypeOf(map[any][]any{}), info{}
+		}
+		return v.error(node.Arguments[1], "predicate should has one input and one output param")
+
+	case "sortBy":
+		collection, _ := v.visit(node.Arguments[0])
+		if !isArray(collection) && !isAny(collection) {
+			return v.error(node.Arguments[0], "builtin %v takes only array (got %v)", node.Name, collection)
+		}
+
+		v.begin(collection)
+		closure, _ := v.visit(node.Arguments[1])
+		v.end()
+
+		if len(node.Arguments) == 3 {
+			_, _ = v.visit(node.Arguments[2])
+		}
+
+		if isFunc(closure) &&
+			closure.NumOut() == 1 &&
+			closure.NumIn() == 1 && isAny(closure.In(0)) {
+
+			return reflect.TypeOf([]any{}), info{}
 		}
 		return v.error(node.Arguments[1], "predicate should has one input and one output param")
 
@@ -827,7 +870,7 @@ func (v *checker) checkBuiltinGet(node *ast.BuiltinNode) (reflect.Type, info) {
 	return v.error(val, "type %v does not support indexing", t)
 }
 
-func (v *checker) checkFunction(f *ast.Function, node ast.Node, arguments []ast.Node) (reflect.Type, info) {
+func (v *checker) checkFunction(f *builtin.Function, node ast.Node, arguments []ast.Node) (reflect.Type, info) {
 	if f.Validate != nil {
 		args := make([]reflect.Type, len(arguments))
 		for i, arg := range arguments {
@@ -839,7 +882,7 @@ func (v *checker) checkFunction(f *ast.Function, node ast.Node, arguments []ast.
 		}
 		return t, info{}
 	} else if len(f.Types) == 0 {
-		t, err := v.checkArguments(f.Name, functionType, false, arguments, node)
+		t, err := v.checkArguments(f.Name, f.Type(), false, arguments, node)
 		if err != nil {
 			if v.err == nil {
 				v.err = err
@@ -868,7 +911,13 @@ func (v *checker) checkFunction(f *ast.Function, node ast.Node, arguments []ast.
 	return v.error(node, "no matching overload for %v", f.Name)
 }
 
-func (v *checker) checkArguments(name string, fn reflect.Type, method bool, arguments []ast.Node, node ast.Node) (reflect.Type, *file.Error) {
+func (v *checker) checkArguments(
+	name string,
+	fn reflect.Type,
+	method bool,
+	arguments []ast.Node,
+	node ast.Node,
+) (reflect.Type, *file.Error) {
 	if isAny(fn) {
 		return anyType, nil
 	}
@@ -898,26 +947,36 @@ func (v *checker) checkArguments(name string, fn reflect.Type, method bool, argu
 		fnInOffset = 1
 	}
 
+	var err *file.Error
 	if fn.IsVariadic() {
 		if len(arguments) < fnNumIn-1 {
-			return anyType, &file.Error{
+			err = &file.Error{
 				Location: node.Location(),
 				Message:  fmt.Sprintf("not enough arguments to call %v", name),
 			}
 		}
 	} else {
 		if len(arguments) > fnNumIn {
-			return anyType, &file.Error{
+			err = &file.Error{
 				Location: node.Location(),
 				Message:  fmt.Sprintf("too many arguments to call %v", name),
 			}
 		}
 		if len(arguments) < fnNumIn {
-			return anyType, &file.Error{
+			err = &file.Error{
 				Location: node.Location(),
 				Message:  fmt.Sprintf("not enough arguments to call %v", name),
 			}
 		}
+	}
+
+	if err != nil {
+		// If we have an error, we should still visit all arguments to
+		// type check them, as a patch can fix the error later.
+		for _, arg := range arguments {
+			_, _ = v.visit(arg)
+		}
+		return fn.Out(0), err
 	}
 
 	for i, arg := range arguments {
@@ -932,7 +991,7 @@ func (v *checker) checkArguments(name string, fn reflect.Type, method bool, argu
 			in = fn.In(i + fnInOffset)
 		}
 
-		if isFloat(in) {
+		if isFloat(in) && isInteger(t) {
 			traverseAndReplaceIntegerNodesWithFloatNodes(&arguments[i], in)
 			continue
 		}
@@ -1106,45 +1165,4 @@ func (v *checker) PairNode(node *ast.PairNode) (reflect.Type, info) {
 	v.visit(node.Key)
 	v.visit(node.Value)
 	return nilType, info{}
-}
-
-func (v *checker) findTypedFunc(node *ast.CallNode, fn reflect.Type, method bool) {
-	// OnCallTyped doesn't work for functions with variadic arguments,
-	// and doesn't work named function, like `type MyFunc func() int`.
-	// In PkgPath() is an empty string, it's unnamed function.
-	if !fn.IsVariadic() && fn.PkgPath() == "" {
-		fnNumIn := fn.NumIn()
-		fnInOffset := 0
-		if method {
-			fnNumIn--
-			fnInOffset = 1
-		}
-	funcTypes:
-		for i := range vm.FuncTypes {
-			if i == 0 {
-				continue
-			}
-			typed := reflect.ValueOf(vm.FuncTypes[i]).Elem().Type()
-			if typed.Kind() != reflect.Func {
-				continue
-			}
-			if typed.NumOut() != fn.NumOut() {
-				continue
-			}
-			for j := 0; j < typed.NumOut(); j++ {
-				if typed.Out(j) != fn.Out(j) {
-					continue funcTypes
-				}
-			}
-			if typed.NumIn() != fnNumIn {
-				continue
-			}
-			for j := 0; j < typed.NumIn(); j++ {
-				if typed.In(j) != fn.In(j+fnInOffset) {
-					continue funcTypes
-				}
-			}
-			node.Typed = i
-		}
-	}
 }
