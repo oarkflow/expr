@@ -29,7 +29,7 @@ func main() {
 	})
 
 	start := time.Now()
-	p, err := expr.Eval("{{name}}", data)
+	p, err := expr.Eval("4+5", data)
 	if err != nil {
 		panic(err)
 	}
