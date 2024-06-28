@@ -256,6 +256,7 @@ func Eval(input string, env any) (any, error) {
 	if _, ok := env.(Option); ok {
 		return nil, fmt.Errorf("misused expr.Eval: second argument (env) should be passed without expr.Env")
 	}
+	input = removeCurlyBraces(input)
 	var opts []Option
 	for name, handler := range customFunctions.funcs {
 		opts = append(opts, Function(name, handler))
@@ -271,4 +272,24 @@ func Eval(input string, env any) (any, error) {
 	}
 
 	return output, nil
+}
+
+func removeCurlyBraces(input string) string {
+	data := []byte(input)
+	n := len(data)
+	j := 0
+
+	for i := 0; i < n; i++ {
+		if i < n-1 && data[i] == '{' && data[i+1] == '{' {
+			i++
+			continue
+		}
+		if i < n-1 && data[i] == '}' && data[i+1] == '}' {
+			i++
+			continue
+		}
+		data[j] = data[i]
+		j++
+	}
+	return string(data[:j])
 }
