@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 
 	"github.com/oarkflow/expr/vm/runtime"
 )
@@ -234,4 +235,13 @@ func Min(args ...any) (any, error) {
 		}
 	}
 	return min, nil
+}
+
+func Concat(args ...any) (any, error) {
+	var stringArgs []string
+	for _, arg := range args {
+		stringArgs = append(stringArgs, fmt.Sprint(arg))
+	}
+	argsString := strings.Join(stringArgs, "")
+	return argsString, nil
 }

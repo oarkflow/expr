@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/oarkflow/expr"
@@ -23,17 +25,22 @@ var data = map[string]interface{}{
 	"end_date":   "2022-09-30",
 }
 
+type Test struct {
+	Pattern string `json:"pattern"`
+}
+
 func main() {
 	expr.AddFunction("current_date", func(params ...any) (any, error) {
 		return time.Now().Format(time.DateOnly), nil
 	})
-
+	var test Test
+	bt, _ := os.ReadFile("test.json")
+	json.Unmarshal(bt, &test)
 	start := time.Now()
-	p, err := expr.Eval("4+5", data)
+	p, err := expr.Eval(test.Pattern, data)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println(p)
-	fmt.Println(expr.AvailableFunctions())
 	fmt.Println(fmt.Sprintf("%s", time.Since(start)))
 }

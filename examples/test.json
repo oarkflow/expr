@@ -1,0 +1,3 @@
+{
+	"pattern": "concat('COLASCE', '(', 'user_id', ',', '\\'', name, '\\'', ')')"
+}

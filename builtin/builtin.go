@@ -968,4 +968,8 @@ var Builtins = []*ast.Function{
 			return arrayType, nil
 		},
 	},
+	{
+		Name: "concat",
+		Func: Concat,
+	},
 }
